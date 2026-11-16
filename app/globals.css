@@ -27,3 +27,4 @@ button:disabled { opacity: .6; cursor: wait; }
 .laporan h3 { margin: 0 0 2px; font-size: 1.05rem; }
 .laporan p { margin: 2px 0; color: var(--muted); font-size: .92rem; }
 .laporan a { color: var(--accent); font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) { button { transition: opacity .15s; } }

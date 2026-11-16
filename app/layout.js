@@ -1,7 +1,8 @@
 import './globals.css';
+import './tambahan.css';
 
 export const metadata = {
-  title: 'Laporan Lokasi Penggunaan HT',
+  title: 'Laporan Penggunaan HT - Balmon SFRID Kelas I Makassar',
   description: 'Laporkan titik penggunaan HT beserta foto buktinya.',
 };
 

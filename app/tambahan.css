@@ -1,0 +1,18 @@
+.atas { background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+.atas-isi { max-width: 640px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.merek { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.merek img { height: 44px; width: auto; display: block; }
+.merek p { margin: 0; font-weight: 700; font-size: .85rem; line-height: 1.25; }
+.menu { position: relative; flex: none; }
+.menu-isi { position: absolute; right: 0; top: calc(100% + 6px); min-width: 210px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px; display: grid; gap: 4px; box-shadow: 0 6px 20px rgba(27, 39, 51, .15); }
+.menu-isi button { text-align: left; background: transparent; color: var(--ink); border: 0; padding: 10px; }
+.menu-isi button:hover { background: var(--bg); }
+.menu-isi .keluar { color: var(--err); }
+.menu-info { margin: 0; padding: 6px 10px; color: var(--muted); font-size: .85rem; }
+.tombol { display: inline-block; text-decoration: none; font-weight: 600; padding: 10px 14px; border-radius: 6px; border: 1px solid var(--accent); color: var(--accent); background: #fff; }
+.ekspor { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 16px; }
+.ekspor span { color: var(--muted); }
+.tirai { position: fixed; inset: 0; background: rgba(27, 39, 51, .55); display: grid; place-items: center; padding: 16px; z-index: 20; }
+.dialog { background: #fff; border-radius: 12px; padding: 24px 20px; max-width: 380px; width: 100%; text-align: center; display: grid; gap: 12px; }
+.dialog h2 { margin: 0; }
+.dialog p { margin: 0; color: var(--muted); }

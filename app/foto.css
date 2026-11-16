@@ -1,0 +1,6 @@
+.laporan .galeri { padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 2px; background: var(--line); }
+.laporan .galeri a { display: block; }
+.laporan .galeri img { width: 100%; height: 120px; max-height: none; object-fit: cover; }
+.laporan .galeri.satu { grid-template-columns: 1fr; }
+.laporan .galeri.satu img { height: auto; max-height: 280px; }
+.pilihan-foto { margin: 0; font-size: .9rem; color: var(--muted); }
