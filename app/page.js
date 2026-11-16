@@ -87,8 +87,12 @@ function FormLapor({ onTidakSah }) {
 
   const kirim = async (e) => {
     e.preventDefault();
-    const lat = f.latitude.trim() === '' ? null : Number(f.latitude);
-    const lng = f.longitude.trim() === '' ? null : Number(f.longitude);
+    const angka = (s) => {
+      const t = s.trim().replace(/[\u2212\u2013]/g, '-').replace(',', '.');
+      return t === '' ? null : Number(t);
+    };
+    const lat = angka(f.latitude);
+    const lng = angka(f.longitude);
     if ((lat === null) !== (lng === null)) return info('Isi latitude dan longitude keduanya, atau kosongkan keduanya.', true);
     if (lat !== null && (isNaN(lat) || lat < -90 || lat > 90)) return info('Latitude harus angka antara -90 dan 90.', true);
     if (lng !== null && (isNaN(lng) || lng < -180 || lng > 180)) return info('Longitude harus angka antara -180 dan 180.', true);
@@ -118,7 +122,7 @@ function FormLapor({ onTidakSah }) {
         method: 'POST', headers: JSON_HEADER,
         body: JSON.stringify({
           pelapor: f.pelapor, nama_tempat: f.nama_tempat, alamat: f.alamat,
-          latitude: f.latitude, longitude: f.longitude,
+          latitude: lat, longitude: lng,
           foto_paths: u.berkas.map((b) => b.path),
         }),
       });
@@ -150,10 +154,10 @@ function FormLapor({ onTidakSah }) {
         <div>
           <div className="koordinat">
             <label>Latitude <small>opsional</small>
-              <input inputMode="decimal" value={f.latitude} onChange={isi('latitude')} placeholder="-6.200000" />
+              <input inputMode="text" autoComplete="off" autoCapitalize="none" value={f.latitude} onChange={isi('latitude')} placeholder="-6.200000" />
             </label>
             <label>Longitude <small>opsional</small>
-              <input inputMode="decimal" value={f.longitude} onChange={isi('longitude')} placeholder="106.816666" />
+              <input inputMode="text" autoComplete="off" autoCapitalize="none" value={f.longitude} onChange={isi('longitude')} placeholder="106.816666" />
             </label>
           </div>
           <p style={{ margin: '10px 0 0' }}>
@@ -185,6 +189,9 @@ function FormLapor({ onTidakSah }) {
 function Daftar({ onTidakSah }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
+  const [target, setTarget] = useState(null);
+  const [menghapus, setMenghapus] = useState(false);
+  const [errHapus, setErrHapus] = useState('');
 
   useEffect(() => {
     panggil('/api/laporan')
@@ -193,6 +200,21 @@ function Daftar({ onTidakSah }) {
   }, []);
 
   const fotoList = (r) => (r.foto_urls && r.foto_urls.length ? r.foto_urls : r.foto_url ? [r.foto_url] : []);
+
+  const hapus = async () => {
+    setMenghapus(true);
+    setErrHapus('');
+    try {
+      await panggil('/api/laporan?id=' + target.id, { method: 'DELETE' });
+      setData((d) => d.filter((x) => x.id !== target.id));
+      setTarget(null);
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) return onTidakSah();
+      setErrHapus(e.message);
+    } finally {
+      setMenghapus(false);
+    }
+  };
 
   return (
     <>
@@ -225,10 +247,25 @@ function Daftar({ onTidakSah }) {
                   Buka di Google Maps</a> ({r.latitude}, {r.longitude})</p>
               )}
               <p>Dilaporkan oleh {r.pelapor} pada {new Date(r.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+              <button type="button" className="bahaya" onClick={() => { setErrHapus(''); setTarget(r); }}>Hapus laporan</button>
             </div>
           </article>
         );
       })}
+
+      {target && (
+        <div className="tirai">
+          <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="judul-hapus">
+            <h2 id="judul-hapus">Hapus laporan ini?</h2>
+            <p>Laporan &quot;{target.nama_tempat}&quot; beserta fotonya akan dihapus permanen dan tidak bisa dikembalikan.</p>
+            {errHapus && <p className="status err" role="alert">{errHapus}</p>}
+            <div className="aksi">
+              <button type="button" className="sekunder" onClick={() => setTarget(null)} disabled={menghapus}>Batal</button>
+              <button type="button" className="bahaya-penuh" onClick={hapus} disabled={menghapus}>{menghapus ? 'Menghapus...' : 'Hapus'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

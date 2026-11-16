@@ -27,7 +27,11 @@ export async function POST(req) {
   const alamat = teks(b.alamat, 500);
   if (!pelapor || !nama_tempat || !alamat) return salah('Nama pelapor, nama tempat, dan alamat wajib diisi.');
 
-  const angka = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : Number(v));
+  const angka = (v) => {
+    if (v === undefined || v === null) return null;
+    const t = String(v).trim().replace(/[\u2212\u2013]/g, '-').replace(',', '.');
+    return t === '' ? null : Number(t);
+  };
   const lat = angka(b.latitude);
   const lng = angka(b.longitude);
   if ((lat === null) !== (lng === null)) return salah('Isi latitude dan longitude keduanya, atau kosongkan keduanya.');
@@ -47,5 +51,34 @@ export async function POST(req) {
     foto_url: urls[0], foto_urls: urls,
   });
   if (e) return NextResponse.json({ pesan: e.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(req) {
+  const { error } = wajib('admin');
+  if (error) return error;
+
+  const id = Number(new URL(req.url).searchParams.get('id'));
+  if (!Number.isInteger(id) || id < 1) {
+    return NextResponse.json({ pesan: 'ID laporan tidak valid.' }, { status: 400 });
+  }
+
+  const db = dbAdmin();
+  const { data: baris, error: e1 } = await db
+    .from('laporan_ht').select('foto_url, foto_urls').eq('id', id).maybeSingle();
+  if (e1) return NextResponse.json({ pesan: e1.message }, { status: 500 });
+  if (!baris) return NextResponse.json({ pesan: 'Laporan tidak ditemukan.' }, { status: 404 });
+
+  const { error: e2 } = await db.from('laporan_ht').delete().eq('id', id);
+  if (e2) return NextResponse.json({ pesan: e2.message }, { status: 500 });
+
+  // Hapus juga file fotonya (tidak menggagalkan penghapusan laporan bila gagal)
+  const urls = baris.foto_urls && baris.foto_urls.length ? baris.foto_urls : baris.foto_url ? [baris.foto_url] : [];
+  const paths = urls
+    .map((u) => decodeURIComponent(String(u).split('/bukti-foto/').pop().split('?')[0]))
+    .filter((p) => /^[\w.\-]+$/.test(p));
+  if (paths.length) {
+    try { await db.storage.from('bukti-foto').remove(paths); } catch {}
+  }
   return NextResponse.json({ ok: true });
 }

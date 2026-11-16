@@ -4,3 +4,8 @@
 .laporan .galeri.satu { grid-template-columns: 1fr; }
 .laporan .galeri.satu img { height: auto; max-height: 280px; }
 .pilihan-foto { margin: 0; font-size: .9rem; color: var(--muted); }
+
+.laporan .bahaya { margin-top: 10px; background: transparent; color: var(--err); border-color: var(--err); }
+.bahaya-penuh { background: var(--err); border-color: var(--err); color: #fff; }
+.aksi { display: flex; gap: 10px; }
+.aksi button { flex: 1; }
