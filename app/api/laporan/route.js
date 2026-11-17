@@ -3,6 +3,17 @@ import { wajib, dbAdmin } from '../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
 
+const POLA_FOTO = /^\d+-[a-f0-9]{8}\.(jpg|png|webp|heic|heif)$/;
+const MAKS_FOTO = 10;
+
+const fotoList = (r) => (r.foto_urls && r.foto_urls.length ? r.foto_urls : r.foto_url ? [r.foto_url] : []);
+
+// Ambil nama file di bucket dari URL publik foto
+const jalurFoto = (urls) =>
+  urls
+    .map((u) => decodeURIComponent(String(u).split('/bukti-foto/').pop().split('?')[0]))
+    .filter((p) => /^[\w.\-]+$/.test(p));
+
 // Memeriksa isian teks dan koordinat (dipakai saat membuat dan mengedit laporan)
 function periksa(b) {
   const teks = (v, maks) => String(v ?? '').trim().slice(0, maks);
@@ -54,15 +65,14 @@ export async function POST(req) {
   if (hasil.pesan) return salah(hasil.pesan);
 
   const paths = Array.isArray(b.foto_paths) ? b.foto_paths.map(String) : [];
-  const pola = /^\d+-[a-f0-9]{8}\.(jpg|png|webp|heic|heif)$/;
-  if (paths.length < 1 || paths.length > 10 || !paths.every((p) => pola.test(p))) {
+  if (paths.length > MAKS_FOTO || !paths.every((p) => POLA_FOTO.test(p))) {
     return salah('Foto bukti tidak valid.');
   }
 
   const db = dbAdmin();
   const urls = paths.map((p) => db.storage.from('bukti-foto').getPublicUrl(p).data.publicUrl);
   const { error: e } = await db.from('laporan_ht').insert({
-    ...hasil.nilai, foto_url: urls[0], foto_urls: urls,
+    ...hasil.nilai, foto_url: urls[0] || null, foto_urls: urls,
   });
   if (e) return NextResponse.json({ pesan: e.message }, { status: 500 });
   return NextResponse.json({ ok: true });
@@ -77,13 +87,41 @@ export async function PATCH(req) {
 
   let b = {};
   try { b = await req.json(); } catch {}
-  const hasil = periksa(b);
-  if (hasil.pesan) return NextResponse.json({ pesan: hasil.pesan }, { status: 400 });
+  const salah = (pesan) => NextResponse.json({ pesan }, { status: 400 });
 
-  const { data, error: e } = await dbAdmin()
-    .from('laporan_ht').update(hasil.nilai).eq('id', id).select().maybeSingle();
+  const hasil = periksa(b);
+  if (hasil.pesan) return salah(hasil.pesan);
+
+  const db = dbAdmin();
+  const { data: lama, error: e0 } = await db
+    .from('laporan_ht').select('foto_url, foto_urls').eq('id', id).maybeSingle();
+  if (e0) return NextResponse.json({ pesan: e0.message }, { status: 500 });
+  if (!lama) return NextResponse.json({ pesan: 'Laporan tidak ditemukan.' }, { status: 404 });
+
+  // Foto yang sudah ada, foto yang dihapus, dan foto baru
+  const sekarang = fotoList(lama);
+  const hapusUrl = Array.isArray(b.foto_hapus) ? b.foto_hapus.map(String) : [];
+  if (!hapusUrl.every((u) => sekarang.includes(u))) return salah('Foto yang akan dihapus tidak ditemukan pada laporan ini.');
+
+  const tambahPath = Array.isArray(b.foto_tambah) ? b.foto_tambah.map(String) : [];
+  if (!tambahPath.every((p) => POLA_FOTO.test(p))) return salah('Foto baru tidak valid.');
+  const tambahUrl = tambahPath.map((p) => db.storage.from('bukti-foto').getPublicUrl(p).data.publicUrl);
+
+  const akhir = [...sekarang.filter((u) => !hapusUrl.includes(u)), ...tambahUrl];
+  if (akhir.length > MAKS_FOTO) return salah(`Maksimal ${MAKS_FOTO} foto per laporan.`);
+
+  const { data, error: e } = await db
+    .from('laporan_ht')
+    .update({ ...hasil.nilai, foto_url: akhir[0] || null, foto_urls: akhir })
+    .eq('id', id).select().maybeSingle();
   if (e) return NextResponse.json({ pesan: e.message }, { status: 500 });
   if (!data) return NextResponse.json({ pesan: 'Laporan tidak ditemukan.' }, { status: 404 });
+
+  // Hapus file foto yang dibuang (tidak menggagalkan penyimpanan bila gagal)
+  const paths = jalurFoto(hapusUrl);
+  if (paths.length) {
+    try { await db.storage.from('bukti-foto').remove(paths); } catch {}
+  }
   return NextResponse.json({ data });
 }
 
@@ -104,10 +142,7 @@ export async function DELETE(req) {
   if (e2) return NextResponse.json({ pesan: e2.message }, { status: 500 });
 
   // Hapus juga file fotonya (tidak menggagalkan penghapusan laporan bila gagal)
-  const urls = baris.foto_urls && baris.foto_urls.length ? baris.foto_urls : baris.foto_url ? [baris.foto_url] : [];
-  const paths = urls
-    .map((u) => decodeURIComponent(String(u).split('/bukti-foto/').pop().split('?')[0]))
-    .filter((p) => /^[\w.\-]+$/.test(p));
+  const paths = jalurFoto(fotoList(baris));
   if (paths.length) {
     try { await db.storage.from('bukti-foto').remove(paths); } catch {}
   }

@@ -6,7 +6,7 @@ create table public.laporan_ht (
   alamat text not null,
   latitude double precision,
   longitude double precision,
-  foto_url text not null,
+  foto_url text,
   foto_urls text[] not null default '{}',
   keterangan text,
   created_at timestamptz not null default now()

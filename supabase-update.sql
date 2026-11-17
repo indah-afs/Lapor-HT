@@ -11,3 +11,6 @@ drop policy if exists "siapa saja boleh unggah foto" on storage.objects;
 
 -- Langkah 3 (jalankan SEBELUM mengunggah versi 1.5): kolom keterangan tambahan
 alter table public.laporan_ht add column if not exists keterangan text;
+
+-- Langkah 4 (jalankan SEBELUM mengunggah versi 1.7): foto tidak lagi wajib
+alter table public.laporan_ht alter column foto_url drop not null;

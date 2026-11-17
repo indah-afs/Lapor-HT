@@ -104,7 +104,6 @@ function FormLapor({ onTidakSah }) {
     if (k.pesan) return info(k.pesan, true);
     const { lat, lng } = k;
 
-    if (foto.length === 0) return info('Foto bukti wajib diunggah.', true);
     if (foto.length > MAKS_FOTO) return info(`Maksimal ${MAKS_FOTO} foto per laporan.`, true);
     const exts = [];
     for (const x of foto) {
@@ -115,9 +114,11 @@ function FormLapor({ onTidakSah }) {
     }
 
     setSedang(true);
-    info('Menyiapkan unggahan...');
+    info(foto.length ? 'Menyiapkan unggahan...' : 'Menyimpan laporan...');
     try {
-      const u = await panggil('/api/upload-url', { method: 'POST', headers: JSON_HEADER, body: JSON.stringify({ exts }) });
+      const u = foto.length
+        ? await panggil('/api/upload-url', { method: 'POST', headers: JSON_HEADER, body: JSON.stringify({ exts }) })
+        : { berkas: [] };
       for (let i = 0; i < foto.length; i++) {
         info(`Mengunggah foto ${i + 1} dari ${foto.length}...`);
         const up = await supabase.storage.from('bukti-foto')
@@ -160,10 +161,10 @@ function FormLapor({ onTidakSah }) {
         </label>
         <div>
           <div className="koordinat">
-            <label>Latitude <small>opsional</small>
+            <label>Latitude
               <input inputMode="text" autoComplete="off" autoCapitalize="none" value={f.latitude} onChange={isi('latitude')} placeholder="-6.200000" />
             </label>
-            <label>Longitude <small>opsional</small>
+            <label>Longitude
               <input inputMode="text" autoComplete="off" autoCapitalize="none" value={f.longitude} onChange={isi('longitude')} placeholder="106.816666" />
             </label>
           </div>
@@ -174,7 +175,7 @@ function FormLapor({ onTidakSah }) {
         <label>Keterangan tambahan <small>opsional. Contoh: HT milik pihak ketiga atau pemilik lokasi, atau hal lain yang sudah Anda identifikasi lebih awal.</small>
           <textarea rows={4} value={f.keterangan} onChange={isi('keterangan')} />
         </label>
-        <label>Foto bukti <small>wajib, bisa lebih dari satu (maksimal {MAKS_FOTO} foto, masing-masing 10 MB)</small>
+        <label>Foto bukti <small>opsional, bisa lebih dari satu (maksimal {MAKS_FOTO} foto, masing-masing 10 MB)</small>
           <input key={fotoKey} type="file" accept="image/*" multiple
             onChange={(e) => setFoto(Array.from(e.target.files || []))} />
         </label>
@@ -206,6 +207,10 @@ function Daftar({ onTidakSah }) {
   const [ef, setEf] = useState(null);
   const [menyimpan, setMenyimpan] = useState(false);
   const [errEdit, setErrEdit] = useState('');
+  const [infoEdit, setInfoEdit] = useState('');
+  const [fotoLama, setFotoLama] = useState([]);
+  const [fotoBaru, setFotoBaru] = useState([]);
+  const [editKey, setEditKey] = useState(0);
 
   useEffect(() => {
     panggil('/api/laporan')
@@ -240,6 +245,10 @@ function Daftar({ onTidakSah }) {
       longitude: r.longitude != null ? String(r.longitude) : '',
       keterangan: r.keterangan || '',
     });
+    setInfoEdit('');
+    setFotoLama(fotoList(r));
+    setFotoBaru([]);
+    setEditKey((k) => k + 1);
     setEdit(r);
   };
   const isiEdit = (k) => (e) => setEf((x) => ({ ...x, [k]: e.target.value }));
@@ -248,12 +257,35 @@ function Daftar({ onTidakSah }) {
     e.preventDefault();
     const k = bacaKoordinat(ef.latitude, ef.longitude);
     if (k.pesan) return setErrEdit(k.pesan);
+    if (fotoLama.length + fotoBaru.length > MAKS_FOTO) return setErrEdit(`Maksimal ${MAKS_FOTO} foto per laporan.`);
+    const exts = [];
+    for (const x of fotoBaru) {
+      const ext = FORMAT_FOTO[x.type];
+      if (!ext) return setErrEdit(`Format foto "${x.name}" tidak didukung. Gunakan JPG, PNG, WEBP, atau HEIC.`);
+      if (x.size > 10 * 1024 * 1024) return setErrEdit(`Foto "${x.name}" lebih dari 10 MB.`);
+      exts.push(ext);
+    }
+
     setMenyimpan(true);
     setErrEdit('');
     try {
+      let paths = [];
+      if (fotoBaru.length) {
+        setInfoEdit('Menyiapkan unggahan...');
+        const u = await panggil('/api/upload-url', { method: 'POST', headers: JSON_HEADER, body: JSON.stringify({ exts }) });
+        for (let i = 0; i < fotoBaru.length; i++) {
+          setInfoEdit(`Mengunggah foto ${i + 1} dari ${fotoBaru.length}...`);
+          const up = await supabase.storage.from('bukti-foto')
+            .uploadToSignedUrl(u.berkas[i].path, u.berkas[i].token, fotoBaru[i], { contentType: fotoBaru[i].type });
+          if (up.error) throw up.error;
+        }
+        paths = u.berkas.map((x) => x.path);
+      }
+      setInfoEdit('Menyimpan perubahan...');
+      const hapusUrl = fotoList(edit).filter((u) => !fotoLama.includes(u));
       const d = await panggil('/api/laporan?id=' + edit.id, {
         method: 'PATCH', headers: JSON_HEADER,
-        body: JSON.stringify({ ...ef, latitude: k.lat, longitude: k.lng }),
+        body: JSON.stringify({ ...ef, latitude: k.lat, longitude: k.lng, foto_hapus: hapusUrl, foto_tambah: paths }),
       });
       setData((lst) => lst.map((x) => (x.id === d.data.id ? d.data : x)));
       setEdit(null);
@@ -261,6 +293,7 @@ function Daftar({ onTidakSah }) {
       if (x.status === 401 || x.status === 403) return onTidakSah();
       setErrEdit(x.message);
     } finally {
+      setInfoEdit('');
       setMenyimpan(false);
     }
   };
@@ -281,13 +314,15 @@ function Daftar({ onTidakSah }) {
         const fotos = fotoList(r);
         return (
           <article className="laporan" key={r.id}>
-            <div className={'galeri' + (fotos.length === 1 ? ' satu' : '')}>
-              {fotos.map((url, i) => (
-                <a key={url} href={url} target="_blank" rel="noopener noreferrer">
-                  <img src={url} alt={`Foto bukti ${i + 1} di ${r.nama_tempat}`} loading="lazy" />
-                </a>
-              ))}
-            </div>
+            {fotos.length > 0 && (
+              <div className={'galeri' + (fotos.length === 1 ? ' satu' : '')}>
+                {fotos.map((url, i) => (
+                  <a key={url} href={url} target="_blank" rel="noopener noreferrer">
+                    <img src={url} alt={`Foto bukti ${i + 1} di ${r.nama_tempat}`} loading="lazy" />
+                  </a>
+                ))}
+              </div>
+            )}
             <div>
               <h3>{r.nama_tempat}</h3>
               <p>{r.alamat}</p>
@@ -321,17 +356,37 @@ function Daftar({ onTidakSah }) {
                 <textarea required rows={3} value={ef.alamat} onChange={isiEdit('alamat')} />
               </label>
               <div className="koordinat">
-                <label>Latitude <small>opsional</small>
+                <label>Latitude
                   <input inputMode="text" autoComplete="off" autoCapitalize="none" value={ef.latitude} onChange={isiEdit('latitude')} />
                 </label>
-                <label>Longitude <small>opsional</small>
+                <label>Longitude
                   <input inputMode="text" autoComplete="off" autoCapitalize="none" value={ef.longitude} onChange={isiEdit('longitude')} />
                 </label>
               </div>
               <label>Keterangan tambahan <small>opsional</small>
                 <textarea rows={4} value={ef.keterangan} onChange={isiEdit('keterangan')} />
               </label>
-              <p className="pilihan-foto">Foto tidak bisa diubah di sini. Untuk mengganti foto, hapus laporan lalu buat laporan baru.</p>
+              <div>
+                <p className="pilihan-foto">Foto saat ini ({fotoLama.length})</p>
+                {fotoLama.length > 0 && (
+                  <div className="grid-foto">
+                    {fotoLama.map((url, i) => (
+                      <div className="foto-item" key={url}>
+                        <img src={url} alt={`Foto ${i + 1}`} />
+                        <button type="button" onClick={() => setFotoLama((l) => l.filter((u) => u !== url))} disabled={menyimpan}>Hapus</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <label>Tambah foto <small>opsional, bisa lebih dari satu (masing-masing 10 MB)</small>
+                <input key={editKey} type="file" accept="image/*" multiple
+                  onChange={(e) => setFotoBaru(Array.from(e.target.files || []))} />
+              </label>
+              <p className="pilihan-foto">
+                Total foto setelah disimpan: {fotoLama.length + fotoBaru.length} dari {MAKS_FOTO}. Foto yang dihapus hilang permanen setelah Anda menekan Simpan.
+              </p>
+              {infoEdit && !errEdit && <p className="status" role="status">{infoEdit}</p>}
               {errEdit && <p className="status err" role="alert">{errEdit}</p>}
               <div className="aksi">
                 <button type="button" className="sekunder" onClick={() => setEdit(null)} disabled={menyimpan}>Batal</button>
