@@ -8,6 +8,7 @@ create table public.laporan_ht (
   longitude double precision,
   foto_url text not null,
   foto_urls text[] not null default '{}',
+  keterangan text,
   created_at timestamptz not null default now()
 );
 

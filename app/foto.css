@@ -5,7 +5,12 @@
 .laporan .galeri.satu img { height: auto; max-height: 280px; }
 .pilihan-foto { margin: 0; font-size: .9rem; color: var(--muted); }
 
-.laporan .bahaya { margin-top: 10px; background: transparent; color: var(--err); border-color: var(--err); }
+.laporan .aksi-kartu { padding: 0; display: flex; gap: 10px; margin-top: 12px; }
+.laporan .bahaya { background: transparent; color: var(--err); border-color: var(--err); }
+.laporan .ket { white-space: pre-wrap; }
+.laporan .ket strong { color: var(--ink); }
+.dialog.lebar { max-width: 520px; text-align: left; max-height: 90vh; overflow-y: auto; }
+.dialog form { border: 0; padding: 0; }
 .bahaya-penuh { background: var(--err); border-color: var(--err); color: #fff; }
 .aksi { display: flex; gap: 10px; }
 .aksi button { flex: 1; }

@@ -3,6 +3,36 @@ import { wajib, dbAdmin } from '../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
 
+// Memeriksa isian teks dan koordinat (dipakai saat membuat dan mengedit laporan)
+function periksa(b) {
+  const teks = (v, maks) => String(v ?? '').trim().slice(0, maks);
+  const pelapor = teks(b.pelapor, 100);
+  const nama_tempat = teks(b.nama_tempat, 200);
+  const alamat = teks(b.alamat, 500);
+  const keterangan = teks(b.keterangan, 2000);
+  if (!pelapor || !nama_tempat || !alamat) {
+    return { pesan: 'Nama pelapor, nama tempat, dan alamat wajib diisi.' };
+  }
+
+  const angka = (v) => {
+    if (v === undefined || v === null) return null;
+    const t = String(v).trim().replace(/[\u2212\u2013]/g, '-').replace(',', '.');
+    return t === '' ? null : Number(t);
+  };
+  const lat = angka(b.latitude);
+  const lng = angka(b.longitude);
+  if ((lat === null) !== (lng === null)) return { pesan: 'Isi latitude dan longitude keduanya, atau kosongkan keduanya.' };
+  if (lat !== null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) return { pesan: 'Latitude harus angka antara -90 dan 90.' };
+  if (lng !== null && (!Number.isFinite(lng) || lng < -180 || lng > 180)) return { pesan: 'Longitude harus angka antara -180 dan 180.' };
+
+  return { nilai: { pelapor, nama_tempat, alamat, latitude: lat, longitude: lng, keterangan: keterangan || null } };
+}
+
+const idDari = (req) => {
+  const id = Number(new URL(req.url).searchParams.get('id'));
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
 export async function GET() {
   const { error } = wajib('admin');
   if (error) return error;
@@ -19,24 +49,9 @@ export async function POST(req) {
   let b = {};
   try { b = await req.json(); } catch {}
 
-  const teks = (v, maks) => String(v ?? '').trim().slice(0, maks);
   const salah = (pesan) => NextResponse.json({ pesan }, { status: 400 });
-
-  const pelapor = teks(b.pelapor, 100);
-  const nama_tempat = teks(b.nama_tempat, 200);
-  const alamat = teks(b.alamat, 500);
-  if (!pelapor || !nama_tempat || !alamat) return salah('Nama pelapor, nama tempat, dan alamat wajib diisi.');
-
-  const angka = (v) => {
-    if (v === undefined || v === null) return null;
-    const t = String(v).trim().replace(/[\u2212\u2013]/g, '-').replace(',', '.');
-    return t === '' ? null : Number(t);
-  };
-  const lat = angka(b.latitude);
-  const lng = angka(b.longitude);
-  if ((lat === null) !== (lng === null)) return salah('Isi latitude dan longitude keduanya, atau kosongkan keduanya.');
-  if (lat !== null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) return salah('Latitude harus angka antara -90 dan 90.');
-  if (lng !== null && (!Number.isFinite(lng) || lng < -180 || lng > 180)) return salah('Longitude harus angka antara -180 dan 180.');
+  const hasil = periksa(b);
+  if (hasil.pesan) return salah(hasil.pesan);
 
   const paths = Array.isArray(b.foto_paths) ? b.foto_paths.map(String) : [];
   const pola = /^\d+-[a-f0-9]{8}\.(jpg|png|webp|heic|heif)$/;
@@ -47,21 +62,37 @@ export async function POST(req) {
   const db = dbAdmin();
   const urls = paths.map((p) => db.storage.from('bukti-foto').getPublicUrl(p).data.publicUrl);
   const { error: e } = await db.from('laporan_ht').insert({
-    pelapor, nama_tempat, alamat, latitude: lat, longitude: lng,
-    foto_url: urls[0], foto_urls: urls,
+    ...hasil.nilai, foto_url: urls[0], foto_urls: urls,
   });
   if (e) return NextResponse.json({ pesan: e.message }, { status: 500 });
   return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(req) {
+  const { error } = wajib('admin');
+  if (error) return error;
+
+  const id = idDari(req);
+  if (!id) return NextResponse.json({ pesan: 'ID laporan tidak valid.' }, { status: 400 });
+
+  let b = {};
+  try { b = await req.json(); } catch {}
+  const hasil = periksa(b);
+  if (hasil.pesan) return NextResponse.json({ pesan: hasil.pesan }, { status: 400 });
+
+  const { data, error: e } = await dbAdmin()
+    .from('laporan_ht').update(hasil.nilai).eq('id', id).select().maybeSingle();
+  if (e) return NextResponse.json({ pesan: e.message }, { status: 500 });
+  if (!data) return NextResponse.json({ pesan: 'Laporan tidak ditemukan.' }, { status: 404 });
+  return NextResponse.json({ data });
 }
 
 export async function DELETE(req) {
   const { error } = wajib('admin');
   if (error) return error;
 
-  const id = Number(new URL(req.url).searchParams.get('id'));
-  if (!Number.isInteger(id) || id < 1) {
-    return NextResponse.json({ pesan: 'ID laporan tidak valid.' }, { status: 400 });
-  }
+  const id = idDari(req);
+  if (!id) return NextResponse.json({ pesan: 'ID laporan tidak valid.' }, { status: 400 });
 
   const db = dbAdmin();
   const { data: baris, error: e1 } = await db

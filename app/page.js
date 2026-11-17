@@ -5,9 +5,22 @@ import { supabase } from '../lib/supabase';
 import { LOGO } from '../lib/logo';
 
 const JSON_HEADER = { 'Content-Type': 'application/json' };
-const awal = { pelapor: '', nama_tempat: '', alamat: '', latitude: '', longitude: '' };
+const awal = { pelapor: '', nama_tempat: '', alamat: '', latitude: '', longitude: '', keterangan: '' };
 const FORMAT_FOTO = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' };
 const MAKS_FOTO = 10;
+
+function bacaKoordinat(latTeks, lngTeks) {
+  const angka = (s) => {
+    const t = String(s ?? '').trim().replace(/[\u2212\u2013]/g, '-').replace(',', '.');
+    return t === '' ? null : Number(t);
+  };
+  const lat = angka(latTeks);
+  const lng = angka(lngTeks);
+  if ((lat === null) !== (lng === null)) return { pesan: 'Isi latitude dan longitude keduanya, atau kosongkan keduanya.' };
+  if (lat !== null && (isNaN(lat) || lat < -90 || lat > 90)) return { pesan: 'Latitude harus angka antara -90 dan 90.' };
+  if (lng !== null && (isNaN(lng) || lng < -180 || lng > 180)) return { pesan: 'Longitude harus angka antara -180 dan 180.' };
+  return { lat, lng };
+}
 
 async function panggil(url, opsi) {
   const r = await fetch(url, opsi);
@@ -87,15 +100,9 @@ function FormLapor({ onTidakSah }) {
 
   const kirim = async (e) => {
     e.preventDefault();
-    const angka = (s) => {
-      const t = s.trim().replace(/[\u2212\u2013]/g, '-').replace(',', '.');
-      return t === '' ? null : Number(t);
-    };
-    const lat = angka(f.latitude);
-    const lng = angka(f.longitude);
-    if ((lat === null) !== (lng === null)) return info('Isi latitude dan longitude keduanya, atau kosongkan keduanya.', true);
-    if (lat !== null && (isNaN(lat) || lat < -90 || lat > 90)) return info('Latitude harus angka antara -90 dan 90.', true);
-    if (lng !== null && (isNaN(lng) || lng < -180 || lng > 180)) return info('Longitude harus angka antara -180 dan 180.', true);
+    const k = bacaKoordinat(f.latitude, f.longitude);
+    if (k.pesan) return info(k.pesan, true);
+    const { lat, lng } = k;
 
     if (foto.length === 0) return info('Foto bukti wajib diunggah.', true);
     if (foto.length > MAKS_FOTO) return info(`Maksimal ${MAKS_FOTO} foto per laporan.`, true);
@@ -122,7 +129,7 @@ function FormLapor({ onTidakSah }) {
         method: 'POST', headers: JSON_HEADER,
         body: JSON.stringify({
           pelapor: f.pelapor, nama_tempat: f.nama_tempat, alamat: f.alamat,
-          latitude: lat, longitude: lng,
+          latitude: lat, longitude: lng, keterangan: f.keterangan,
           foto_paths: u.berkas.map((b) => b.path),
         }),
       });
@@ -164,6 +171,9 @@ function FormLapor({ onTidakSah }) {
             <button type="button" className="sekunder" onClick={ambilLokasi}>Ambil lokasi saya</button>
           </p>
         </div>
+        <label>Keterangan tambahan <small>opsional. Contoh: HT milik pihak ketiga atau pemilik lokasi, atau hal lain yang sudah Anda identifikasi lebih awal.</small>
+          <textarea rows={4} value={f.keterangan} onChange={isi('keterangan')} />
+        </label>
         <label>Foto bukti <small>wajib, bisa lebih dari satu (maksimal {MAKS_FOTO} foto, masing-masing 10 MB)</small>
           <input key={fotoKey} type="file" accept="image/*" multiple
             onChange={(e) => setFoto(Array.from(e.target.files || []))} />
@@ -192,6 +202,10 @@ function Daftar({ onTidakSah }) {
   const [target, setTarget] = useState(null);
   const [menghapus, setMenghapus] = useState(false);
   const [errHapus, setErrHapus] = useState('');
+  const [edit, setEdit] = useState(null);
+  const [ef, setEf] = useState(null);
+  const [menyimpan, setMenyimpan] = useState(false);
+  const [errEdit, setErrEdit] = useState('');
 
   useEffect(() => {
     panggil('/api/laporan')
@@ -213,6 +227,41 @@ function Daftar({ onTidakSah }) {
       setErrHapus(e.message);
     } finally {
       setMenghapus(false);
+    }
+  };
+
+  const bukaEdit = (r) => {
+    setErrEdit('');
+    setEf({
+      pelapor: r.pelapor || '',
+      nama_tempat: r.nama_tempat || '',
+      alamat: r.alamat || '',
+      latitude: r.latitude != null ? String(r.latitude) : '',
+      longitude: r.longitude != null ? String(r.longitude) : '',
+      keterangan: r.keterangan || '',
+    });
+    setEdit(r);
+  };
+  const isiEdit = (k) => (e) => setEf((x) => ({ ...x, [k]: e.target.value }));
+
+  const simpan = async (e) => {
+    e.preventDefault();
+    const k = bacaKoordinat(ef.latitude, ef.longitude);
+    if (k.pesan) return setErrEdit(k.pesan);
+    setMenyimpan(true);
+    setErrEdit('');
+    try {
+      const d = await panggil('/api/laporan?id=' + edit.id, {
+        method: 'PATCH', headers: JSON_HEADER,
+        body: JSON.stringify({ ...ef, latitude: k.lat, longitude: k.lng }),
+      });
+      setData((lst) => lst.map((x) => (x.id === d.data.id ? d.data : x)));
+      setEdit(null);
+    } catch (x) {
+      if (x.status === 401 || x.status === 403) return onTidakSah();
+      setErrEdit(x.message);
+    } finally {
+      setMenyimpan(false);
     }
   };
 
@@ -246,12 +295,52 @@ function Daftar({ onTidakSah }) {
                 <p><a href={`https://www.google.com/maps?q=${r.latitude},${r.longitude}`} target="_blank" rel="noopener noreferrer">
                   Buka di Google Maps</a> ({r.latitude}, {r.longitude})</p>
               )}
+              {r.keterangan && <p className="ket"><strong>Keterangan:</strong> {r.keterangan}</p>}
               <p>Dilaporkan oleh {r.pelapor} pada {new Date(r.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</p>
-              <button type="button" className="bahaya" onClick={() => { setErrHapus(''); setTarget(r); }}>Hapus laporan</button>
+              <div className="aksi-kartu">
+                <button type="button" className="sekunder" onClick={() => bukaEdit(r)}>Edit</button>
+                <button type="button" className="bahaya" onClick={() => { setErrHapus(''); setTarget(r); }}>Hapus laporan</button>
+              </div>
             </div>
           </article>
         );
       })}
+
+      {edit && ef && (
+        <div className="tirai">
+          <div className="dialog lebar" role="dialog" aria-modal="true" aria-labelledby="judul-edit">
+            <h2 id="judul-edit">Edit laporan</h2>
+            <form onSubmit={simpan}>
+              <label>Nama pelapor
+                <input required value={ef.pelapor} onChange={isiEdit('pelapor')} />
+              </label>
+              <label>Nama tempat
+                <input required value={ef.nama_tempat} onChange={isiEdit('nama_tempat')} />
+              </label>
+              <label>Lokasi / alamat
+                <textarea required rows={3} value={ef.alamat} onChange={isiEdit('alamat')} />
+              </label>
+              <div className="koordinat">
+                <label>Latitude <small>opsional</small>
+                  <input inputMode="text" autoComplete="off" autoCapitalize="none" value={ef.latitude} onChange={isiEdit('latitude')} />
+                </label>
+                <label>Longitude <small>opsional</small>
+                  <input inputMode="text" autoComplete="off" autoCapitalize="none" value={ef.longitude} onChange={isiEdit('longitude')} />
+                </label>
+              </div>
+              <label>Keterangan tambahan <small>opsional</small>
+                <textarea rows={4} value={ef.keterangan} onChange={isiEdit('keterangan')} />
+              </label>
+              <p className="pilihan-foto">Foto tidak bisa diubah di sini. Untuk mengganti foto, hapus laporan lalu buat laporan baru.</p>
+              {errEdit && <p className="status err" role="alert">{errEdit}</p>}
+              <div className="aksi">
+                <button type="button" className="sekunder" onClick={() => setEdit(null)} disabled={menyimpan}>Batal</button>
+                <button type="submit" disabled={menyimpan}>{menyimpan ? 'Menyimpan...' : 'Simpan'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {target && (
         <div className="tirai">
